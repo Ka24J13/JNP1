@@ -2,7 +2,6 @@
 #include <iostream>
 #include <unordered_set>
 #include <vector>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <regex>
@@ -76,14 +75,22 @@ namespace {
      * @param line_num numer aktualnie czytanej linii inputu
      * @return true, jesli sygnal wyjsciowy z 'gate' nie znajdowal sie do jest pory w 'outputs', false wpp.
      */
-    bool validate_outputs(const gate_t &gate, output_signals_t &outputs, line_num_t line_num) {
+    bool validate_outputs(const gate_t &gate,
+                          output_signals_t &outputs,
+                          line_num_t line_num) {
+
         int output = gate[OUTPUT_POS];
         if (outputs.find(output) == outputs.end()) {
             outputs.insert(output);
             return true;
         } else {
-            cerr << "Error in line " << line_num << ": signal " << output << " is assigned to multiple outputs."
-                 << endl;
+            cerr << "Error in line "
+                    << line_num
+                    << ": signal "
+                    << output
+                    << " is assigned to multiple outputs."
+                    << endl;
+
             return false;
         }
     }
@@ -138,8 +145,8 @@ namespace {
      * Funkcja wypisuje tablice prawdy dla ukladu
      * @param signals poszczegolne sygnaly w ukladzie
      */
-    void printSignals(const input_signals_t &signals) {
-        for (int i = 0; i < signals.begin()->second.size(); i++) {
+    void print_signals(const input_signals_t &signals) {
+        for (size_t i = 0; i < signals.begin()->second.size(); i++) {
             for (const auto &it: signals) {
                 cout << it.second[i];
             }
@@ -150,167 +157,211 @@ namespace {
     /**
      * zaminenia wektor na zbiór
      */
-    set<vector<int>> vectorToSet(const gates_t &gates) {
-        set<vector<int>> gatesSet;
+    set<vector<int>> vector_to_set(const gates_t &gates) {
+        set<vector<int>> gates_set;
         for (auto &gate: gates) {
-            gatesSet.insert(gate);
+            gates_set.insert(gate);
         }
-        return gatesSet;
+        return gates_set;
+    }
+
+    /**
+     * sprawdza czy bramkę można zasymulować
+     * @param gate bramka
+     * @param signals znane sygnały
+     * @return true jeżeli można, false wpp.
+     */
+    bool is_simulatable(const vector<int> &gate,
+                        const input_signals_t &signals) {
+
+        for (auto gate_input_it = gate.begin() + INPUT_POS;
+             gate_input_it != gate.end();
+             ++gate_input_it) {
+
+            if (!signals.contains(*gate_input_it)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * funkcje ponizej symuluja dzialanie poszczegolnych bramek
+     * @param gate bramka
+     * @param signals sygnaly wejsciowe do danej bramki
+     * @return sygnal wyjsciowy
+     */
+    signal_t g_AND(const gate_t &gate, input_signals_t &signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            bool current_output = true;
+            for (auto gate_input_it = gate.begin() + INPUT_POS;
+                 gate_input_it != gate.end();
+                 ++gate_input_it) {
+
+                if (!signals[*gate_input_it].at(i)) {
+                    current_output = false;
+                    break;
+                }
+            }
+            output.push_back(current_output);
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    signal_t g_XOR(const gate_t &gate, input_signals_t &signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            if (signals[gate[INPUT_POS]].at(i)
+                    != signals[gate[INPUT_POS + 1]].at(i)) {
+
+                output.push_back(true);
+            } else {
+                output.push_back(false);
+            }
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    signal_t g_NOT(const gate_t &gate, input_signals_t &signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            output.push_back(!signals[gate[INPUT_POS]].at(i));
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    signal_t g_NAND(const gate_t &gate, input_signals_t signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            bool current_output = false;
+            for (auto gate_input_it = gate.begin() + INPUT_POS;
+                 gate_input_it != gate.end();
+                 ++gate_input_it) {
+
+                if (!signals[*gate_input_it].at(i)) {
+                    current_output = true;
+                    break;
+                }
+            }
+            output.push_back(current_output);
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    signal_t g_OR(const gate_t &gate, input_signals_t signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            bool current_output = false;
+            for (auto gate_input_it = gate.begin() + INPUT_POS;
+                 gate_input_it != gate.end();
+                 ++gate_input_it) {
+
+                if (signals[*gate_input_it].at(i)) {
+                    current_output = true;
+                    break;
+                }
+            }
+            output.push_back(current_output);
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    signal_t g_NOR(const gate_t &gate, input_signals_t signals) {
+        vector<bool> output;
+        for (size_t i = 0;
+                i < signals.at(*(gate.begin() + INPUT_POS)).size();
+                i++) {
+
+            bool current_output = true;
+            for (auto gate_input_it = gate.begin() + INPUT_POS;
+                 gate_input_it != gate.end();
+                 ++gate_input_it) {
+
+                if (signals[*gate_input_it].at(i)) {
+                    current_output = false;
+                    break;
+                }
+            }
+            output.push_back(current_output);
+        }
+        return {gate[OUTPUT_POS], output};
+    }
+
+    /**
+     * symuluje bramkę
+     * @param gate bramka
+     * @param input_signals sygnaly wejsciowe do danej bramki
+     * @return sygnal wyjsciowy
+     */
+    signal_t simulate_one(const vector<int> &gate,
+                          input_signals_t &input_signals) {
+
+        switch (gate[NAME_POS]) {
+            case 0:
+                return g_NOT(gate, input_signals);
+            case 1:
+                return g_XOR(gate, input_signals);
+            case 2:
+                return g_AND(gate, input_signals);
+            case 3:
+                return g_NAND(gate, input_signals);
+            case 4:
+                return g_OR(gate, input_signals);
+            default:
+                return g_NOR(gate, input_signals);
+        }
+    }
+
+    /**
+     * przeprowadza symulację dla wszystkich kombinacji sygnałów wejściowych
+     * @param gates wszystkie bramki
+     * @return false jeżeli układ sekwencyjny, true wpp.
+     */
+    bool simulate_all(const gates_t &gates, input_signals_t &inputs) {
+
+        set<vector<int>> to_simulate = vector_to_set(gates);
+
+        do {
+            bool progress = false;
+
+            for (auto gate_it = to_simulate.begin();
+                 gate_it != to_simulate.end();) {
+
+                if (is_simulatable(*gate_it, inputs)) {
+                    inputs.insert(simulate_one(*gate_it, inputs));
+                    to_simulate.erase(gate_it++);      // już zasymulowana
+                    progress = true;
+                } else gate_it++;
+            }
+
+            if (!progress) {
+                cerr <<
+                "Error: sequential logic analysis has not yet been implemented."
+                << endl;
+
+                return false;    // układ sekwencyjny
+            }
+        } while (!to_simulate.empty());
+
+        return true;
     }
 
 }  // Koniec anonimowej przestrzeni nazw
 
-
-/**
- * sprawdza czy bramkę można zasymulować
- * @param gate bramka
- * @param signals znane sygnały
- * @return true jeżeli można, false wpp.
- */
-bool isSimulatable(const vector<int> &gate, const input_signals_t &signals) {
-    for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
-        if (!signals.contains(*gateInput_it)) return false;
-    }
-    return true;
-}
-
-/**
- * funkcje ponizej symuluja dzialanie poszczegolnych bramek
- * @param gate bramka
- * @param signals sygnaly wejsciowe do danej bramki
- * @return sygnal wyjsciowy
- */
-signal_t gAND(const gate_t &gate, input_signals_t &signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        bool current_output = true;
-        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
-            if (!signals[*gateInput_it].at(i)) {
-                current_output = false;
-                break;
-            }
-        }
-        output.push_back(current_output);
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-signal_t gXOR(const gate_t &gate, input_signals_t &signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        if (signals[gate[INPUT_POS]].at(i) != signals[gate[INPUT_POS + 1]].at(i)) {
-            output.push_back(true);
-        } else {
-            output.push_back(false);
-        }
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-signal_t gNOT(const gate_t &gate, input_signals_t &signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        output.push_back(!signals[gate[INPUT_POS]].at(i));
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-signal_t gNAND(const gate_t &gate, input_signals_t signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        bool current_output = false;
-        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
-            if (!signals[*gateInput_it].at(i)) {
-                current_output = true;
-                break;
-            }
-        }
-        output.push_back(current_output);
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-signal_t gOR(const gate_t &gate, input_signals_t signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        bool current_output = false;
-        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
-            if (signals[*gateInput_it].at(i)) {
-                current_output = true;
-                break;
-            }
-        }
-        output.push_back(current_output);
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-signal_t gNOR(const gate_t &gate, input_signals_t signals) {
-    vector<bool> output;
-    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
-        bool current_output = true;
-        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
-            if (signals[*gateInput_it].at(i)) {
-                current_output = false;
-                break;
-            }
-        }
-        output.push_back(current_output);
-    }
-    return {gate[OUTPUT_POS], output};
-}
-
-/**
- * symuluje bramkę
- * @param gate bramka
- * @param input_signals sygnaly wejsciowe do danej bramki
- * @return sygnal wyjsciowy
- */
-signal_t simulateOne(const vector<int> &gate, input_signals_t &input_signals) {
-    switch (gate[NAME_POS]) {
-        case 0:
-            return gNOT(gate, input_signals);
-        case 1:
-            return gXOR(gate, input_signals);
-        case 2:
-            return gAND(gate, input_signals);
-        case 3:
-            return gNAND(gate, input_signals);
-        case 4:
-            return gOR(gate, input_signals);
-        case 5:
-            return gNOR(gate, input_signals);
-    }
-}
-
-/**
- * przeprowadza symulację dla wszystkich kombinacji sygnałów wejściowych
- * @param gates wszystkie bramki
- * @return false jeżeli układ sekwencyjny, true wpp.
- */
-bool simulateAll(const gates_t &gates, input_signals_t &inputs) {
-
-    set<vector<int>> toSimulate = vectorToSet(gates);
-
-    do {
-        bool progress = false;
-
-        for (auto gate_it = toSimulate.begin(); gate_it != toSimulate.end();) {
-            if (isSimulatable(*gate_it, inputs)) {
-                inputs.insert(simulateOne(*gate_it, inputs));
-                toSimulate.erase(gate_it++);      // już zasymulowana
-                progress = true;
-            } else gate_it++;
-        }
-
-        if (!progress) {
-            cerr << "Error: sequential logic analysis has not yet been implemented." << endl;
-            return false;    // układ sekwencyjny
-        }
-    } while (!toSimulate.empty());
-
-    return true;
-}
 
 int main() {
 
@@ -328,14 +379,14 @@ int main() {
     gates_t lines;
     output_signals_t outputs;
     line_num_t line_num = 0;
-    bool isCorrect = true;
+    bool is_correct = true;
 
     while (getline(cin, line)) {
 
         line_num++;
 
         if (!validate_line(line, line_num)) {
-            isCorrect = false;
+            is_correct = false;
         } else {
             stringstream s(line);
             gate_t gate;
@@ -350,13 +401,13 @@ int main() {
             lines.push_back(gate);
 
             if (!validate_outputs(gate, outputs, line_num)) {
-                isCorrect = false;
+                is_correct = false;
             }
         }
 
     }
 
-    if (!isCorrect) exit(1);
+    if (!is_correct) exit(1);
 
     input_signals_t inputs;
 
@@ -365,8 +416,8 @@ int main() {
 
     generate_input_signals(inputs, signals, inputs.size(), 0);
 
-    if (simulateAll(lines, inputs)) {
-        printSignals(inputs);
+    if (simulate_all(lines, inputs)) {
+        print_signals(inputs);
     }
 
     return 0;
