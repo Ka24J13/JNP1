@@ -19,6 +19,7 @@ using std::string;
 using std::stringstream;
 using std::vector;
 using std::unordered_set;
+using std::set;
 using std::unordered_map;
 using std::map;
 using std::regex;
@@ -31,7 +32,14 @@ using line_num_t = size_t;
 using gate_t = vector<int>;
 using gates_t = vector<vector<int>>;
 using output_signals_t = unordered_set<int>;
+using signal_t = pair<int, vector<bool>>;
+// zwykla mapa jest potrzebna, gdyz sygnaly maja byc printowane w kolejnosci ich numerow
 using input_signals_t = map<int, vector<bool>>;
+
+//Stale
+static const int NAME_POS = 0; // w danej bramce nazwa bramki bedzie miec index 0
+static const int OUTPUT_POS = 1; // w danej bramce nr sygnalu wyjsciowego bedzie miec index 1
+static const int INPUT_POS = 2; // w danej bramce nr sygnalow wejsciowych beda sie zaczynac od indexu 2
 
 
 // Funkcje pomocnicze
@@ -45,14 +53,13 @@ namespace {
      */
     bool validate_line(string &line, line_num_t line_num) {
 
-
         static const vector<regex> valid_gates_regex =
                 {
-                        regex(R"(\s*NOT(\s+[1-9]+[0-9]*){2}\s*)"),
-                        regex(R"(\s*XOR(\s+[1-9]+[0-9]*){3}\s*)"),
-                        regex(R"(\s*(AND|NAND|OR|NOR)(\s+[1-9]+[0-9]*){3}(\s+[1-9]+[0-9]*)*\s*)")
+                        regex(R"(\s*NOT(\s+([1-9]){1}([0-9]){0,8}){2}\s*)"),
+                        regex(R"(\s*XOR(\s+([1-9]){1}([0-9]){0,8}){3}\s*)"),
+                        regex(R"(\s*(AND|NAND|OR|NOR)(\s+([1-9]){1}([0-9]){0,8}){3}(\s+([1-9]){1}([0-9]){0,8})*\s*)")
                 };
-        for (const auto &reg : valid_gates_regex) {
+        for (const auto &reg: valid_gates_regex) {
             if (regex_match(line, reg)) {
                 return true;
             }
@@ -60,7 +67,6 @@ namespace {
 
         cerr << "Error in line " << line_num << ": " << line << endl;
         return false;
-
     }
 
     /**
@@ -71,7 +77,7 @@ namespace {
      * @return true, jesli sygnal wyjsciowy z 'gate' nie znajdowal sie do jest pory w 'outputs', false wpp.
      */
     bool validate_outputs(const gate_t &gate, output_signals_t &outputs, line_num_t line_num) {
-        int output = gate[1];
+        int output = gate[OUTPUT_POS];
         if (outputs.find(output) == outputs.end()) {
             outputs.insert(output);
             return true;
@@ -92,7 +98,7 @@ namespace {
                             const output_signals_t &outputs,
                             input_signals_t &inputs) {
         for (auto gate: gates) {
-            for (size_t i = 2; i < gate.size(); i++) {
+            for (size_t i = INPUT_POS; i < gate.size(); i++) {
                 if (outputs.find(gate[i]) == outputs.end()) {
                     vector<bool> v;
                     inputs.insert(make_pair(gate[i], v));
@@ -126,161 +132,155 @@ namespace {
 
         signals[index] = true;
         generate_input_signals(inputs, signals, len, index + 1);
+    }
 
+    /**
+     * Funkcja wypisuje tablice prawdy dla ukladu
+     * @param signals poszczegolne sygnaly w ukladzie
+     */
+    void printSignals(const input_signals_t &signals) {
+        for (int i = 0; i < signals.begin()->second.size(); i++) {
+            for (const auto &it: signals) {
+                cout << it.second[i];
+            }
+            cout << endl;
+        }
+    }
+
+    /**
+     * zaminenia wektor na zbiór
+     */
+    set<vector<int>> vectorToSet(const gates_t &gates) {
+        set<vector<int>> gatesSet;
+        for (auto &gate: gates) {
+            gatesSet.insert(gate);
+        }
+        return gatesSet;
     }
 
 }  // Koniec anonimowej przestrzeni nazw
 
 
-
 /**
- * zmienia kombinację sygnałów wejsciowych na nastepną
- * @param inputs kombinacja sygnałów wejsciowych
- * @return false jeżeli jest już ostatnia kombinacja, true wpp.
- */
-bool incrementInputs(map<int, bool> *inputs) {
-    for (auto it = inputs->end(); it != inputs->begin();) {
-        --it;
-        if (!it->second) {
-            it->second = true;
-            return true;
-        }
-        it->second = false;
-    }
-    return false;
-}
-
-void printSignals(map<int, bool> &signals) {
-    for (auto input_it = signals.begin(); input_it != signals.end(); ++input_it) {
-        cout << input_it->second;
-    }
-    cout << endl;
-}
-
-/**sprawdza czy bramkę można zasymulować
+ * sprawdza czy bramkę można zasymulować
  * @param gate bramka
  * @param signals znane sygnały
  * @return true jeżeli można, false wpp.
  */
-bool isSimulatable(const vector<int> &gate, map<int, bool> signals) {
-    for (auto gateInput_it = gate.begin() +2; gateInput_it != gate.end(); ++gateInput_it) {
+bool isSimulatable(const vector<int> &gate, const input_signals_t &signals) {
+    for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
         if (!signals.contains(*gateInput_it)) return false;
     }
     return true;
 }
 
 /**
- * symuluje bramkę AND
+ * funkcje ponizej symuluja dzialanie poszczegolnych bramek
  * @param gate bramka
- * @param signals znane sygnały
- * @return sygnał wyjściowy <numer, wartość>
+ * @param signals sygnaly wejsciowe do danej bramki
+ * @return sygnal wyjsciowy
  */
-pair<int, bool> gAND(const vector<int> &gate, map<int, bool> signals) {
-    bool output = true;
-    for (auto gateInput_it = gate.begin() +2; gateInput_it != gate.end(); ++gateInput_it) {
-        if (!signals[*gateInput_it]) {
-            output = false;
-            break;
+signal_t gAND(const gate_t &gate, input_signals_t &signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        bool current_output = true;
+        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
+            if (!signals[*gateInput_it].at(i)) {
+                current_output = false;
+                break;
+            }
+        }
+        output.push_back(current_output);
+    }
+    return {gate[OUTPUT_POS], output};
+}
+
+signal_t gXOR(const gate_t &gate, input_signals_t &signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        if (signals[gate[INPUT_POS]].at(i) != signals[gate[INPUT_POS + 1]].at(i)) {
+            output.push_back(true);
+        } else {
+            output.push_back(false);
         }
     }
-    return pair<int, bool>(gate[1], output);
+    return {gate[OUTPUT_POS], output};
 }
 
-pair<int, bool> gXOR(const vector<int> &gate, map<int, bool> signals) {
-    if (signals[gate[2]] != signals[gate[3]]) return pair<int, bool>(gate[1], true);
-    return pair<int, bool>(gate[1], false);
-}
-
-pair<int, bool> gNOT(const vector<int> &gate, map<int, bool> signals) {
-    return pair<int, bool>(gate[1], !signals[gate[2]]);
-}
-
-pair<int, bool> gNAND(const vector<int> &gate, map<int, bool> signals) {
-    bool output = false;
-    for (auto gateInput_it = gate.begin() +2; gateInput_it != gate.end(); ++gateInput_it) {
-        if (!signals[*gateInput_it]) {
-            output = true;
-            break;
-        }
+signal_t gNOT(const gate_t &gate, input_signals_t &signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        output.push_back(!signals[gate[INPUT_POS]].at(i));
     }
-    return pair<int, bool>(gate[1], output);
+    return {gate[OUTPUT_POS], output};
 }
 
-pair<int, bool> gOR(const vector<int> &gate, map<int, bool> signals) {
-    bool output = false;
-    for (auto gateInput_it = gate.begin() +2; gateInput_it != gate.end(); ++gateInput_it) {
-        if (signals[*gateInput_it]) {
-            output = true;
-            break;
+signal_t gNAND(const gate_t &gate, input_signals_t signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        bool current_output = false;
+        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
+            if (!signals[*gateInput_it].at(i)) {
+                current_output = true;
+                break;
+            }
         }
+        output.push_back(current_output);
     }
-    return pair<int, bool>(gate[1], output);
+    return {gate[OUTPUT_POS], output};
 }
 
-pair<int, bool> gNOR(const vector<int> &gate, map<int, bool> signals) {
-    bool output = true;
-    for (auto gateInput_it = gate.begin() +2; gateInput_it != gate.end(); ++gateInput_it) {
-        if (signals[*gateInput_it]) {
-            output = false;
-            break;
+signal_t gOR(const gate_t &gate, input_signals_t signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        bool current_output = false;
+        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
+            if (signals[*gateInput_it].at(i)) {
+                current_output = true;
+                break;
+            }
         }
+        output.push_back(current_output);
     }
-    return pair<int, bool>(gate[1], output);
+    return {gate[OUTPUT_POS], output};
+}
+
+signal_t gNOR(const gate_t &gate, input_signals_t signals) {
+    vector<bool> output;
+    for (int i = 0; i < signals.at(*(gate.begin() + INPUT_POS)).size(); i++) {
+        bool current_output = true;
+        for (auto gateInput_it = gate.begin() + INPUT_POS; gateInput_it != gate.end(); ++gateInput_it) {
+            if (signals[*gateInput_it].at(i)) {
+                current_output = false;
+                break;
+            }
+        }
+        output.push_back(current_output);
+    }
+    return {gate[OUTPUT_POS], output};
 }
 
 /**
  * symuluje bramkę
  * @param gate bramka
- * @param signals znane sygnały
- * @return sygnał wyjściowy <numer, wartość>
+ * @param input_signals sygnaly wejsciowe do danej bramki
+ * @return sygnal wyjsciowy
  */
-pair<int, bool> simulateOne(const vector<int> &gate, map<int, bool> signals) {
-    switch (gate[0]) {
+signal_t simulateOne(const vector<int> &gate, input_signals_t &input_signals) {
+    switch (gate[NAME_POS]) {
         case 0:
-            return gNOT(gate, signals);
+            return gNOT(gate, input_signals);
         case 1:
-            return gXOR(gate, signals);
+            return gXOR(gate, input_signals);
         case 2:
-            return gAND(gate, signals);
+            return gAND(gate, input_signals);
         case 3:
-            return gNAND(gate, signals);
+            return gNAND(gate, input_signals);
         case 4:
-            return gOR(gate, signals);
+            return gOR(gate, input_signals);
         case 5:
-            return gNOR(gate, signals);
-
+            return gNOR(gate, input_signals);
     }
-}
-
-/**
- * zaminenia wektor na zbiór
- */
-std::set<vector<int>> vectorToSet(vector<vector<int>> gates) {
-    std::set<vector<int>> gatesSet;
-    for (auto vector_it = gates.begin(); vector_it != gates.end(); ++vector_it) {
-        gatesSet.insert(*vector_it);
-    }
-    return gatesSet;
-}
-
-/**
- * daje mapę z sygnałami wejściowymi (ustawionymi na 0)
- * @param gates bramki
- * @return mapa z sygnałami wejściowymi
- */
-map<int, bool> getInputs(vector<vector<int>> gates) {
-    //dodanie wszystkich sygnałów
-    map<int, bool> signalNumbers;
-    for (auto gates_it = gates.begin(); gates_it != gates.end(); ++gates_it) {
-        for (auto signalNumbers_it = gates_it->begin() +2; signalNumbers_it != gates_it->end(); ++signalNumbers_it) {
-            signalNumbers.insert(pair<int, bool>(*signalNumbers_it, false));
-        }
-    }
-    //usunięcie sygnałów wyjściowych
-    for (auto gates_it = gates.begin(); gates_it != gates.end(); ++gates_it) {
-        signalNumbers.erase((*gates_it)[1]);
-    }
-    return signalNumbers;
 }
 
 /**
@@ -288,39 +288,32 @@ map<int, bool> getInputs(vector<vector<int>> gates) {
  * @param gates wszystkie bramki
  * @return false jeżeli układ sekwencyjny, true wpp.
  */
-bool simulateAll(vector<vector<int>> gates) {
-    map<int, bool> inputs = getInputs(gates);   //daje mapę z sygnałami wejściowymi (ustawionymi na 0)
+bool simulateAll(const gates_t &gates, input_signals_t &inputs) {
 
-    bool progress = false;
+    set<vector<int>> toSimulate = vectorToSet(gates);
+
     do {
-        std::set<vector<int>> toSimulate = vectorToSet(gates);
-        map<int, bool> signals(inputs);    // można tak?
+        bool progress = false;
 
-        do {
-            for (auto gate_it = toSimulate.begin(); gate_it != toSimulate.end();) {
-                if (isSimulatable(*gate_it, signals)) {
-                    signals.insert(simulateOne(*gate_it, signals));
-                    toSimulate.erase(gate_it++);      //już zasymulowana
-                    progress = true;
-                }
-                else gate_it++;
-            }
+        for (auto gate_it = toSimulate.begin(); gate_it != toSimulate.end();) {
+            if (isSimulatable(*gate_it, inputs)) {
+                inputs.insert(simulateOne(*gate_it, inputs));
+                toSimulate.erase(gate_it++);      // już zasymulowana
+                progress = true;
+            } else gate_it++;
+        }
 
-        } while (progress && !toSimulate.empty());
         if (!progress) {
             cerr << "Error: sequential logic analysis has not yet been implemented." << endl;
-            return false;    //układ sekwencyjny?
+            return false;    // układ sekwencyjny
         }
-        printSignals(signals);
-
-    } while (incrementInputs(&inputs));
-
+    } while (!toSimulate.empty());
 
     return true;
 }
 
-
 int main() {
+
     static const unordered_map<string, int> gates_names =
             {
                     {"NOT",  0},
@@ -343,8 +336,7 @@ int main() {
 
         if (!validate_line(line, line_num)) {
             isCorrect = false;
-        }
-        else {
+        } else {
             stringstream s(line);
             gate_t gate;
             string word;
@@ -364,7 +356,6 @@ int main() {
 
     }
 
-    /*
     if (!isCorrect) exit(1);
 
     input_signals_t inputs;
@@ -374,23 +365,9 @@ int main() {
 
     generate_input_signals(inputs, signals, inputs.size(), 0);
 
-    cout << endl;
-    for (const auto &it: inputs) {
-        cout << it.first << " ";
+    if (simulateAll(lines, inputs)) {
+        printSignals(inputs);
     }
-    cout << endl;
-    for (int i = 0; i < pow(2, inputs.size()); i++) {
-        for (const auto &it: inputs) {
-            cout << it.second[i] << " ";
-        }
-        cout << endl;
-    }
-    cout << endl;
-     */
-
-    if (!isCorrect) exit(1);
-
-    simulateAll(lines);
 
     return 0;
 }
